@@ -43,8 +43,17 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Same toolchain as tools/setup_buildenv_ubuntu24.04.sh
       - name: Install packages
-        run: ${{ matrix.setup_cmd }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+          pip install asciitree clang==18.1.8 jinja2 lz4 pillow pydantic pyelftools typing_extensions
+          mkdir -p "$HOME/arm-gnu-toolchain"
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz \
+            -O "$RUNNER_TEMP/arm-gnu-toolchain.tar.xz"
+          tar xJf "$RUNNER_TEMP/arm-gnu-toolchain.tar.xz" -C "$HOME/arm-gnu-toolchain" --strip-components=1
+          echo "$HOME/arm-gnu-toolchain/bin" >> "$GITHUB_PATH"
 
       - name: Run MemBrowse Onboard Action
         uses: membrowse/membrowse-action/onboard-action@v1
@@ -57,9 +66,5 @@ jobs:
           ld_include_dirs: ${{ matrix.ld_include_dirs }}
           map_file: ${{ matrix.map_file }}
           linker_vars: ${{ matrix.linker_vars }}
-          skip_sections: ${{ matrix.skip_sections }}
-          partition_table: ${{ matrix.partition_table }}
-          partition_name: ${{ matrix.partition_name }}
           binary_search: 'true'
           api_key: ${{ secrets.MEMBROWSE_API_KEY }}
-          api_url: ${{ vars.MEMBROWSE_API_URL }}

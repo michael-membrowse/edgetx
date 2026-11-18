@@ -1,35 +1,43 @@
 name: MemBrowse PR Comment
 
+# Posts from the base repository, so PRs from forks get a comment too. The
+# reports are uploaded by the MemBrowse jobs of the firmware workflow.
 on:
   workflow_run:
-    workflows: [MemBrowse Memory Report]
+    workflows: [Run tests and package firmware]
     types:
       - completed
 
 jobs:
   comment:
     runs-on: ubuntu-latest
-    # Run even if some builds failed — but skip cancelled runs and skipped runs
-    # (e.g. draft PRs, where nothing is built or uploaded, so the summary lookup
-    # would 404 on a commit with no report).
-    if: >
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion != 'cancelled' &&
-      github.event.workflow_run.conclusion != 'skipped'
+    if: github.event.workflow_run.event == 'pull_request'
     permissions:
+      actions: read
       contents: read
       pull-requests: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      # No report exists when no MemBrowse job succeeded (e.g. a PR labelled
+      # 'ci: skip-fw', a failed build or a cancelled run)
+      - name: Check for uploaded reports
+        id: reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          count=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs" \
+            --jq '.jobs[] | select((.name | startswith("MemBrowse")) and .conclusion == "success") | .name' | wc -l)
+          echo "Successful MemBrowse jobs: ${count}"
+          echo "found=$([[ ${count} -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Post combined PR comment
-        if: ${{ env.MEMBROWSE_API_KEY != '' }}
+        if: ${{ steps.reports.outputs.found == 'true' && env.MEMBROWSE_API_KEY != '' }}
         uses: membrowse/membrowse-action/comment-action@v1
         with:
           api_key: ${{ secrets.MEMBROWSE_API_KEY }}
-          api_url: ${{ vars.MEMBROWSE_API_URL }}
           commit: ${{ github.event.workflow_run.head_sha }}
         env:
           MEMBROWSE_API_KEY: ${{ secrets.MEMBROWSE_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gh posts the comment; there is no checkout to take the repo from
+          GH_REPO: ${{ github.repository }}
